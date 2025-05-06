@@ -1,19 +1,3 @@
-# Modified version of DL_Assignment3_Master.ipynb to avoid plagiarism (continued)
-
-# --------------------------------------
-# Install necessary packages
-# --------------------------------------
-!pip install wandb
-!pip install wordcloud
-!pip install colour
-
-# Install Hindi fonts for proper visualization
-!apt-get install -y fonts-lohit-deva
-!fc-list :lang=hi family
-
-# --------------------------------------
-# Imports
-# --------------------------------------
 import os
 import random
 import time
@@ -23,171 +7,951 @@ import numpy as np
 import pandas as pd
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+from matplotlib.font_manager import FontProperties
+from wordcloud import WordCloud, STOPWORDS
+from collections import Counter
+from colour import Color
+from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
+
 import tensorflow as tf
 from tensorflow.keras import layers
+import tensorflow.keras.backend as K
+from tensorflow.keras.preprocessing.text import Tokenizer
 
-from matplotlib.font_manager import FontProperties
 
-# --------------------------------------
-# Mount Google Drive
-# --------------------------------------
+# importing drive for google colab
 from google.colab import drive
 drive.mount('/content/drive')
 
-# --------------------------------------
-# Data Downloading Utilities
-# --------------------------------------
+## Download the dataset ##
 import requests
 import tarfile
 
-def download_dataset(destination_folder):
-    """Download the Dakshina dataset if not already present."""
-    dataset_url = "https://storage.googleapis.com/gresearch/dakshina/dakshina_dataset_v1.0.tar"
-    if not os.path.exists(destination_folder):
-        response = requests.get(dataset_url, stream=True)
-        with open('dakshina_dataset.tar', 'wb') as file:
-            file.write(response.content)
-        tar = tarfile.open('dakshina_dataset.tar')
-        tar.extractall()
-        tar.close()
+def download_data(save_path):
 
-# --------------------------------------
-# Data Loader
-# --------------------------------------
-def load_data(language_code):
-    """Load training, validation and test sets."""
-    path = f"dakshina_dataset_v1.0/{language_code}/lexicons/"
-    train = pd.read_csv(os.path.join(path, "train.csv"))
-    val = pd.read_csv(os.path.join(path, "dev.csv"))
-    test = pd.read_csv(os.path.join(path, "test.csv"))
-    return train, val, test
+    data_url = r"https://storage.googleapis.com/gresearch/dakshina/dakshina_dataset_v1.0.tar"
 
-# --------------------------------------
-# Layer Builder
-# --------------------------------------
-def build_layer(cell_type, num_units, dropout_rate=0.0, return_state=False, return_sequences=False):
-    """Utility to build RNN, LSTM, or GRU layers."""
-    if cell_type.lower() == "rnn":
-        return layers.SimpleRNN(units=num_units, dropout=dropout_rate,
-                                return_state=return_state, return_sequences=return_sequences)
-    elif cell_type.lower() == "lstm":
-        return layers.LSTM(units=num_units, dropout=dropout_rate,
-                           return_state=return_state, return_sequences=return_sequences)
-    elif cell_type.lower() == "gru":
-        return layers.GRU(units=num_units, dropout=dropout_rate,
-                          return_state=return_state, return_sequences=return_sequences)
+    r = requests.get(data_url, allow_redirects=True)
+    tar_path = "data_assignment3.tar"
+
+    if r.status_code == 200:
+        with open(tar_path, 'wb') as f:
+            f.write(r.content)
+
+    tar_file = tarfile.open(tar_path)
+    tar_file.extractall(save_path)
+    tar_file.close()
+
+
+# downloading and extracting the data to drive
+# comment out the below line if running the cell again
+#download_data("/content/drive/MyDrive/DakshinaDataset")
+
+
+# Data preprocessing
+# Files with English to Devanagari (Hindi) translation word by word
+# Punctutations have already been cleaned from this file
+
+def get_data_files(language):
+    """ Function fo read data
+    """
+
+    ## REPLACE THIS PATH UPTO dakshina_dataset_v1.0 with your own dataset path ##
+    template = "/content/drive/MyDrive/DakshinaDataset/dakshina_dataset_v1.0/{}/lexicons/{}.translit.sampled.{}.tsv"
+
+    train_tsv = template.format(language, language, "train")
+    val_tsv = template.format(language, language, "dev")
+    test_tsv = template.format(language, language, "test")
+
+    return train_tsv, val_tsv, test_tsv
+
+## Utility functions for preprocessing data ##
+
+def add_start_end_tokens(df, cols, sos="\t", eos="\n"):
+    """ Adds EOS and SOS tokens to data
+    """
+    def add_tokens(s):
+        # \t = starting token
+        # \n = ending token
+        return sos + str(s) + eos
+
+    for col in cols:
+        df[col] = df[col].apply(add_tokens)
+
+def tokenize(lang, tokenizer=None):
+    """ Uses tf.keras tokenizer to tokenize the data/words into characters
+    """
+
+    if tokenizer is None:
+        tokenizer = Tokenizer(char_level=True)
+        tokenizer.fit_on_texts(lang)
+
+        lang_tensor = tokenizer.texts_to_sequences(lang)
+        lang_tensor = tf.keras.preprocessing.sequence.pad_sequences(lang_tensor,
+                                                            padding='post')
+
     else:
-        raise ValueError("Unsupported cell type provided!")
+        lang_tensor = tokenizer.texts_to_sequences(lang)
+        lang_tensor = tf.keras.preprocessing.sequence.pad_sequences(lang_tensor,
+                                                            padding='post')
 
-# --------------------------------------
-# Beam Search Class
-# --------------------------------------
-class BeamSearchDecoder:
-    def __init__(self, trained_model, beam_size):
-        """Initialize beam search decoder."""
-        self.model = trained_model
-        self.beam_width = beam_size
+    return lang_tensor, tokenizer
 
-    def decode(self, prediction_probs):
-        """Decode using beam search from output probabilities."""
-        # Placeholder: implement beam search here
-        pass
+def preprocess_data(fpath, input_lang_tokenizer=None, targ_lang_tokenizer=None):
+    """ Reads, tokenizes and adds SOS/EOS tokens to data based on above functions
+    """
 
-# --------------------------------------
-# Seq2Seq Model Class
-# --------------------------------------
-class SequenceToSequenceModel:
-    def __init__(self, embed_dim, enc_layers, dec_layers, rnn_cell, hidden_dim, dropout_rate=0.0, use_attention=False):
-        """Flexible Encoder-Decoder model with optional attention."""
-        self.embedding_dim = embed_dim
-        self.num_enc_layers = enc_layers
-        self.num_dec_layers = dec_layers
-        self.cell_type = rnn_cell
-        self.hidden_units = hidden_dim
-        self.dropout = dropout_rate
-        self.attention = use_attention
-        self._build_model()
+    df = pd.read_csv(fpath, sep="\t", header=None)
 
-    def _build_model(self):
-        """Create encoder-decoder architecture."""
-        # Encoder
-        self.encoder_inputs = layers.Input(shape=(None,))
-        x = layers.Embedding(input_dim=5000, output_dim=self.embedding_dim)(self.encoder_inputs)
-        for _ in range(self.num_enc_layers):
-            x = build_layer(self.cell_type, self.hidden_units, self.dropout, return_sequences=True)(x)
-        self.encoder_output = x
+    # adding start and end tokens to know when to stop predicting
+    add_start_end_tokens(df, [0,1])
 
-        # Decoder
-        self.decoder_inputs = layers.Input(shape=(None,))
-        y = layers.Embedding(input_dim=5000, output_dim=self.embedding_dim)(self.decoder_inputs)
-        for _ in range(self.num_dec_layers):
-            y = build_layer(self.cell_type, self.hidden_units, self.dropout, return_sequences=True)(y)
+    input_lang_tensor, input_tokenizer = tokenize(df[1].astype(str).tolist(),
+                                                    tokenizer=input_lang_tokenizer)
 
-        # Optional attention mechanism
+    targ_lang_tensor, targ_tokenizer = tokenize(df[0].astype(str).tolist(),
+                                                    tokenizer=targ_lang_tokenizer)
+
+    dataset = tf.data.Dataset.from_tensor_slices((input_lang_tensor, targ_lang_tensor))
+    dataset = dataset.shuffle(len(dataset))
+
+    return dataset, input_tokenizer, targ_tokenizer
+
+# Model building
+
+def get_layer(name, units, dropout, return_state=False, return_sequences=False):
+    name = name.lower()
+    if name == "rnn":
+        return layers.SimpleRNN(units=units, dropout=dropout,
+                                return_state=return_state,
+                                return_sequences=return_sequences)
+    if name == "gru":
+        return layers.GRU(units=units, dropout=dropout,
+                          return_state=return_state,
+                          return_sequences=return_sequences)
+    if name == "lstm":
+        return layers.LSTM(units=units, dropout=dropout,
+                           return_state=return_state,
+                           return_sequences=return_sequences)
+    raise ValueError(f"Unknown layer type: {name}")
+
+class Encoder(tf.keras.Model):
+    def __init__(self, layer_type, n_layers, units, vocab_size, embedding_dim, dropout):
+        super(Encoder, self).__init__()
+        self.n_layers = n_layers
+        self.units = units
+        self.layer_type = layer_type.lower()
+        self.dropout = dropout
+        self.embedding = layers.Embedding(vocab_size, embedding_dim)
+
+        # Build stacked RNN layers
+        self.rnn_layers = []
+        if n_layers == 1:
+            # Single layer: return full sequence and final state
+            self.rnn_layers.append(get_layer(self.layer_type, units, dropout,
+                                             return_sequences=True, return_state=True))
+        else:
+            # Intermediate layers: return sequences, no state
+            for _ in range(n_layers - 1):
+                self.rnn_layers.append(get_layer(self.layer_type, units, dropout,
+                                                 return_sequences=True, return_state=False))
+            # Final layer: return sequences and state
+            self.rnn_layers.append(get_layer(self.layer_type, units, dropout,
+                                             return_sequences=True, return_state=True))
+
+    def call(self, x, hidden):
+        """
+        x: input tokens (batch, timesteps)
+        hidden: initial hidden state(s).
+                For LSTM: [h, c], for GRU/RNN: [h].
+        Returns: output sequence and final state list.
+        """
+        # Embed inputs
+        x = self.embedding(x)  # (batch, timesteps, embed_dim)
+        output = x
+
+        # Prepare initial state for first layer
+        if self.layer_type == "lstm":
+            initial_state = hidden  # [h, c]
+        else:
+            # GRU/RNN: hidden is [h]
+            initial_state = hidden[0] if isinstance(hidden, list) else hidden
+
+        # Single-layer case
+        if self.n_layers == 1:
+            if self.layer_type == "lstm":
+                output, state_h, state_c = self.rnn_layers[0](output, initial_state=initial_state)
+                return output, [state_h, state_c]
+            else:
+                output, state_h = self.rnn_layers[0](output, initial_state=initial_state)
+                return output, [state_h]
+
+        # Multi-layer case
+        # First layer with initial state
+        output = self.rnn_layers[0](output, initial_state=initial_state)
+        # Intermediate layers (no state returned)
+        for layer in self.rnn_layers[1:-1]:
+            output = layer(output)
+        # Final layer returns sequence + state(s)
+        if self.layer_type == "lstm":
+            output, state_h, state_c = self.rnn_layers[-1](output)
+            return output, [state_h, state_c]
+        else:
+            output, state_h = self.rnn_layers[-1](output)
+            return output, [state_h]
+
+    def initialize_hidden_state(self, batch_size):
+        """Returns initial zero state."""
+        if self.layer_type == "lstm":
+            return [tf.zeros((batch_size, self.units)), tf.zeros((batch_size, self.units))]
+        else:
+            return [tf.zeros((batch_size, self.units))]
+
+
+class Decoder(tf.keras.Model):
+    def __init__(self, layer_type, n_layers, units, vocab_size, embedding_dim, dropout, attention=False):
+        super(Decoder, self).__init__()
+        self.n_layers = n_layers
+        self.units = units
+        self.layer_type = layer_type.lower()
+        self.dropout = dropout
+        self.attention = attention
+
+        self.embedding = layers.Embedding(vocab_size, embedding_dim)
         if self.attention:
-            attention = layers.Attention()([y, x])
-            y = layers.Concatenate()([y, attention])
+            self.attention_layer = BahdanauAttention(units)
 
-        # Output layer
-        self.outputs = layers.TimeDistributed(layers.Dense(5000, activation='softmax'))(y)
+        # Build stacked RNN layers for decoder
+        self.rnn_layers = []
+        if n_layers == 1:
+            # Single layer: no time dimension output (one step), return state
+            self.rnn_layers.append(get_layer(self.layer_type, units, dropout,
+                                             return_sequences=False, return_state=True))
+        else:
+            # Intermediate layers: return sequences + state
+            for _ in range(n_layers - 1):
+                self.rnn_layers.append(get_layer(self.layer_type, units, dropout,
+                                                 return_sequences=True, return_state=True))
+            # Final layer: no time dimension (one step), return state
+            self.rnn_layers.append(get_layer(self.layer_type, units, dropout,
+                                             return_sequences=False, return_state=True))
 
-        self.model = tf.keras.Model([self.encoder_inputs, self.decoder_inputs], self.outputs)
+        self.dense = layers.Dense(vocab_size, activation='softmax')
 
-    def compile_model(self):
-        """Compile the model."""
-        self.model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
+    def call(self, x, hidden, enc_out=None):
+        """
+        x: decoder input tokens (batch, 1)
+        hidden: initial hidden state(s) from encoder ([h, c] or [h])
+        enc_out: encoder outputs for attention (if any)
+        Returns: (predictions, new_state_list, attention_weights)
+        """
+        x = self.embedding(x)  # (batch, 1, embed_dim)
 
-    def summary(self):
-        """Print model summary."""
-        return self.model.summary()
+        # Apply attention if available
+        if self.attention and enc_out is not None:
+            context_vector, attention_weights = self.attention_layer(hidden, enc_out)
+            context_vector = tf.expand_dims(context_vector, 1)  # (batch, 1, units)
+            x = tf.concat([context_vector, x], axis=-1)
+        else:
+            attention_weights = None
 
-# --------------------------------------
-# Training function
-# --------------------------------------
-def train_model(model, dataset, epochs=10, batch_size=64):
-    """Train the model on provided dataset."""
-    (x_train_enc, x_train_dec), y_train = dataset
-    history = model.model.fit([x_train_enc, x_train_dec], y_train, epochs=epochs, batch_size=batch_size, validation_split=0.2)
-    return history
+        output = x
 
-# --------------------------------------
-# W&B sweep config
-# --------------------------------------
-def sweep_training():
-    """Define sweep configurations and start training."""
-    wandb.login()
-    sweep_config = {
-        'method': 'grid',
-        'parameters': {
-            'embedding_dim': {'values': [64, 128]},
-            'hidden_units': {'values': [64, 128]},
-            'cell_type': {'values': ['lstm', 'gru']},
-            'dropout': {'values': [0.2, 0.3]}
-        }
+        # Prepare initial state for first layer
+        if self.layer_type == "lstm":
+            initial_state = hidden  # [h, c]
+        else:
+            initial_state = hidden[0] if isinstance(hidden, list) else hidden
+
+        # First layer with initial state
+        if self.layer_type == "lstm":
+            output, state_h, state_c = self.rnn_layers[0](output, initial_state=initial_state)
+        else:
+            output, state_h = self.rnn_layers[0](output, initial_state=initial_state)
+
+        # Pass through remaining layers
+        for layer in self.rnn_layers[1:]:
+            if self.layer_type == "lstm":
+                output, state_h, state_c = layer(output)
+            else:
+                output, state_h = layer(output)
+
+        # Final output (no time dimension)
+        output = self.dense(output)  # (batch, vocab_size)
+
+        # Return state list appropriately
+        if self.layer_type == "lstm":
+            return output, [state_h, state_c], attention_weights
+        else:
+            return output, [state_h], attention_weights
+
+
+
+class Seq2SeqModel():
+    def __init__(self, embedding_dim, encoder_layers, decoder_layers, layer_type, units, dropout, attention=False):
+        self.embedding_dim = embedding_dim
+        self.encoder_layers = encoder_layers
+        self.decoder_layers = decoder_layers
+        self.layer_type = layer_type
+        self.units = units
+        self.dropout = dropout
+        self.attention = attention
+        self.stats = []
+        self.batch_size = 128
+        self.use_beam_search = False
+
+    def build(self, loss, optimizer, metric):
+        self.loss = loss
+        self.optimizer = optimizer
+        self.metric = metric
+
+    def set_vocabulary(self, input_tokenizer, targ_tokenizer):
+        self.input_tokenizer = input_tokenizer
+        self.targ_tokenizer = targ_tokenizer
+        self.create_model()
+
+    def create_model(self):
+
+        encoder_vocab_size = len(self.input_tokenizer.word_index) + 1
+        decoder_vocab_size = len(self.targ_tokenizer.word_index) + 1
+
+        self.encoder = Encoder(self.layer_type, self.encoder_layers, self.units, encoder_vocab_size,
+                               self.embedding_dim, self.dropout)
+
+        self.decoder = Decoder(self.layer_type, self.decoder_layers, self.units, decoder_vocab_size,
+                               self.embedding_dim,  self.dropout, self.attention)
+
+    @tf.function
+ # Within Seq2SeqModel class, updated train_step (no @tf.function decorator)
+    def train_step(self, input_seq, target_seq, enc_state):
+        loss = 0
+        with tf.GradientTape() as tape:
+            enc_out, enc_state = self.encoder(input_seq, enc_state)
+            dec_state = enc_state  # initial decoder state
+            dec_input = tf.expand_dims(
+                [self.targ_tokenizer.word_index["\t"]] * self.batch_size, 1
+            )
+
+            # Teacher forcing loop
+            if random.random() < self.teacher_forcing_ratio:
+                for t in range(1, target_seq.shape[1]):
+                    preds, dec_state, _ = self.decoder(dec_input, dec_state, enc_out)
+                    loss += self.loss(target_seq[:, t], preds)
+                    self.metric.update_state(target_seq[:, t], preds)
+                    dec_input = tf.expand_dims(target_seq[:, t], 1)
+            else:
+                for t in range(1, target_seq.shape[1]):
+                    preds, dec_state, _ = self.decoder(dec_input, dec_state, enc_out)
+                    loss += self.loss(target_seq[:, t], preds)
+                    self.metric.update_state(target_seq[:, t], preds)
+                    dec_input = tf.expand_dims(tf.argmax(preds, 1), 1)
+
+            batch_loss = loss / tf.cast(target_seq.shape[1] - 1, tf.float32)
+            trainable_vars = self.encoder.trainable_variables + self.decoder.trainable_variables
+            gradients = tape.gradient(loss, trainable_vars)
+            self.optimizer.apply_gradients(zip(gradients, trainable_vars))
+            return batch_loss, self.metric.result()
+
+
+    @tf.function
+    def validation_step(self, input, target, enc_state):
+
+        loss = 0
+
+        enc_out, enc_state = self.encoder(input, enc_state)
+
+        dec_state = enc_state
+        dec_input = tf.expand_dims([self.targ_tokenizer.word_index["\t"]]*self.batch_size ,1)
+
+        for t in range(1, target.shape[1]):
+
+            preds, dec_state, _ = self.decoder(dec_input, dec_state, enc_out)
+            loss += self.loss(target[:,t], preds)
+            self.metric.update_state(target[:,t], preds)
+
+            preds = tf.argmax(preds, 1)
+            dec_input = tf.expand_dims(preds, 1)
+
+        batch_loss = loss / target.shape[1]
+
+        return batch_loss, self.metric.result()
+
+
+    def fit(self, dataset, val_dataset, batch_size=128, epochs=10, use_wandb=False, teacher_forcing_ratio=1.0):
+
+        self.batch_size = batch_size
+        self.teacher_forcing_ratio = teacher_forcing_ratio
+
+        steps_per_epoch = len(dataset) // self.batch_size
+        steps_per_epoch_val = len(val_dataset) // self.batch_size
+
+        dataset = dataset.batch(self.batch_size, drop_remainder=True)
+        val_dataset = val_dataset.batch(self.batch_size, drop_remainder=True)
+
+        # useful when we need to translate the sentence
+        sample_inp, sample_targ = next(iter(dataset))
+        self.max_target_len = sample_targ.shape[1]
+        self.max_input_len = sample_inp.shape[1]
+
+        template = "\nTrain Loss: {0:.4f} Train Accuracy: {1:.4f} Validation Loss: {2:.4f} Validation Accuracy: {3:.4f}"
+
+        print("-"*100)
+        for epoch in range(1, epochs+1):
+            print(f"EPOCH {epoch}\n")
+
+            ## Training loop ##
+            total_loss = 0
+            total_acc = 0
+            self.metric.reset_state()
+
+            starting_time = time.time()
+            enc_state = self.encoder.initialize_hidden_state(self.batch_size)
+
+            print("Training ...\n")
+            for batch, (input, target) in enumerate(dataset.take(steps_per_epoch)):
+                batch_loss, acc = self.train_step(input, target, enc_state)
+                total_loss += batch_loss
+                total_acc += acc
+
+
+                if batch==0 or ((batch + 1) % 100 == 0):
+                    print(f"Batch {batch+1} Loss {batch_loss:.4f}")
+
+            avg_acc = total_acc / steps_per_epoch
+            avg_loss = total_loss / steps_per_epoch
+
+            # Validation loop ##
+            total_val_loss = 0
+            total_val_acc = 0
+            self.metric.reset_state()
+
+            enc_state = self.encoder.initialize_hidden_state(self.batch_size)
+
+            print("\nValidating ...")
+            for batch, (input, target) in enumerate(val_dataset.take(steps_per_epoch_val)):
+                batch_loss, acc = self.validation_step(input, target, enc_state)
+                total_val_loss += batch_loss
+                total_val_acc += acc
+
+            avg_val_acc = total_val_acc / steps_per_epoch_val
+            avg_val_loss = total_val_loss / steps_per_epoch_val
+
+            print(template.format(avg_loss, avg_acc*100, avg_val_loss, avg_val_acc*100))
+
+            time_taken = time.time() - starting_time
+            self.stats.append({"epoch": epoch,
+                            "train loss": avg_loss,
+                            "val loss": avg_val_loss,
+                            "train acc": avg_acc*100,
+                            "val acc": avg_val_acc*100,
+                            "training time": time_taken})
+
+            if use_wandb:
+                wandb.log(self.stats[-1])
+
+            print(f"\nTime taken for the epoch {time_taken:.4f}")
+            print("-"*100)
+
+        print("\nModel trained successfully !!")
+
+    def evaluate(self, test_dataset, batch_size=None):
+
+        if batch_size is not None:
+            self.batch_size = batch_size
+
+        steps_per_epoch_test = len(test_dataset) // batch_size
+        test_dataset = test_dataset.batch(batch_size, drop_remainder=True)
+
+        total_test_loss = 0
+        total_test_acc = 0
+        self.metric.reset_state()
+
+        enc_state = self.encoder.initialize_hidden_state(self.batch_size)
+
+        print("\nRunning test dataset through the model...\n")
+        for batch, (input, target) in enumerate(test_dataset.take(steps_per_epoch_test)):
+            batch_loss, acc = self.validation_step(input, target, enc_state)
+            total_test_loss += batch_loss
+            total_test_acc += acc
+
+        avg_test_acc = total_test_acc / steps_per_epoch_test
+        avg_test_loss = total_test_loss / steps_per_epoch_test
+
+        print(f"Test Loss: {avg_test_loss:.4f} Test Accuracy: {avg_test_acc:.4f}")
+
+        return avg_test_loss, avg_test_acc
+
+
+    def translate(self, word, get_heatmap=False):
+
+        word = "\t" + word + "\n"
+
+        inputs = self.input_tokenizer.texts_to_sequences([word])
+        inputs = tf.keras.preprocessing.sequence.pad_sequences(inputs,
+                                                               maxlen=self.max_input_len,
+                                                               padding="post")
+
+        result = ""
+        att_wts = []
+
+        enc_state = self.encoder.initialize_hidden_state(1)
+        enc_out, enc_state = self.encoder(inputs, enc_state)
+
+        dec_state = enc_state
+        dec_input = tf.expand_dims([self.targ_tokenizer.word_index["\t"]]*1, 1)
+
+        for t in range(1, self.max_target_len):
+
+            preds, dec_state, attention_weights = self.decoder(dec_input, dec_state, enc_out)
+
+            if get_heatmap:
+                att_wts.append(attention_weights)
+
+            preds = tf.argmax(preds, 1)
+            next_char = self.targ_tokenizer.index_word[preds.numpy().item()]
+            result += next_char
+
+            dec_input = tf.expand_dims(preds, 1)
+
+            if next_char == "\n":
+                return result[:-1], att_wts[:-1]
+
+        return result[:-1], att_wts[:-1]
+
+    def plot_attention_heatmap(self, word, ax, font_path="/usr/share/fonts/truetype/lohit-devanagari/Lohit-Devanagari.ttf"):
+
+        translated_word, attn_wts = self.translate(word, get_heatmap=True)
+        attn_heatmap = tf.squeeze(tf.concat(attn_wts, 0), -1).numpy()
+
+        input_word_len = len(word)
+        output_word_len = len(translated_word)
+
+        ax.imshow(attn_heatmap[:, :input_word_len])
+
+        font_prop = FontProperties(fname=font_path, size=18)
+
+        ax.set_xticks(np.arange(input_word_len))
+        ax.set_yticks(np.arange(output_word_len))
+
+        ax.set_xticklabels(list(word))
+        ax.set_yticklabels(list(translated_word), fontproperties=font_prop)
+
+# Visualizing Model Outputs 
+def get_colors(inputs, targets, preds):
+
+    n = len(targets)
+    smoother = SmoothingFunction().method2
+    def get_scores(target, output, smoother):
+        return sentence_bleu(list(list(target)), list(output), smoothing_function=smoother)
+
+    red = Color("red")
+    colors = list(red.range_to(Color("violet"),n))
+    colors = list(map(lambda c: c.hex, colors))
+
+    scores = []
+    for i in range(n):
+        scores.append(get_scores(targets[i], preds[i], smoother))
+
+    d = dict(zip(sorted(scores), list(range(n))))
+    ordered_colors = list(map(lambda x: colors[d[x]], scores))
+
+    input_colors = dict(zip(inputs, ordered_colors))
+    target_colors = dict(zip(targets, ordered_colors))
+    pred_colors = dict(zip(preds, ordered_colors))
+
+    return input_colors, target_colors, pred_colors
+
+
+class Colorizer():
+    def __init__(self, word_to_color, default_color):
+
+        self.word_to_color = word_to_color
+        self.default_color = default_color
+
+    def __call__(self, word, **kwargs):
+        return self.word_to_color.get(word, self.default_color)
+
+def randomly_evaluate(model, test_file=get_data_files("hi")[2], n=10):
+
+    df = pd.read_csv(test_file, sep="\t", header=None)
+    df = df.sample(n=n).reset_index(drop=True)
+
+    print(f"Randomly evaluating the model on {n} words\n")
+
+    for i in range(n):
+        word = str(df[1][i])
+
+        print(f"Input word: {word}")
+        print(f"Actual translation: {str(df[0][i])}")
+        print(f"Model translation: {model.translate(word)[0]}\n")
+
+def visualize_model_outputs(model, test_file=get_data_files("hi")[2], n=10, font_path="/usr/share/fonts/truetype/lohit-devanagari/Lohit-Devanagari.ttf"):
+
+    df = pd.read_csv(test_file, sep="\t", header=None)
+    df = df.sample(n=n).reset_index(drop=True)
+
+    inputs = df[1].astype(str).tolist()
+    targets = df[0].astype(str).tolist()
+    preds = list(map(lambda word: model.translate(word)[0], inputs))
+
+    # Generate colors for the words
+    input_colors, target_colors, pred_colors =  get_colors(inputs, targets, preds)
+    color_fn_ip = Colorizer(input_colors, "white")
+    color_fn_tr = Colorizer(target_colors, "white")
+    color_fn_op = Colorizer(pred_colors, "white")
+
+    input_text = Counter(inputs)
+    target_text = Counter(targets)
+    output_text = Counter(preds)
+
+    fig, axs = plt.subplots(1,3, figsize=(30, 15))
+    plt.tight_layout()
+
+    wc_in = WordCloud(random_state=1).generate_from_frequencies(input_text)
+    wc_out = WordCloud(font_path=font_path, random_state=1).generate_from_frequencies(output_text)
+    wc_tar = WordCloud(font_path=font_path, random_state=1).generate_from_frequencies(target_text)
+
+    axs[0].set_title("Input words", fontsize=30)
+    axs[0].imshow(wc_in.recolor(color_func=color_fn_ip))
+    axs[1].set_title("Target words", fontsize=30)
+    axs[1].imshow(wc_tar.recolor(color_func=color_fn_tr))
+    axs[2].set_title("Model outputs", fontsize=30)
+    axs[2].imshow(wc_out.recolor(color_func=color_fn_op))
+    plt.show()
+
+
+
+def test_on_dataset(language, embedding_dim, encoder_layers, decoder_layers, layer_type, units, dropout, attention, teacher_forcing_ratio=1.0, save_outputs=None):
+
+    TRAIN_TSV, VAL_TSV, TEST_TSV = get_data_files(language)
+
+    model = Seq2SeqModel(embedding_dim,
+                         encoder_layers,
+                         decoder_layers,
+                         layer_type,
+                         units,
+                         dropout,
+                         attention)
+
+    dataset, input_tokenizer, targ_tokenizer = preprocess_data(TRAIN_TSV)
+    val_dataset, _, _ = preprocess_data(VAL_TSV, input_tokenizer, targ_tokenizer)
+
+    model.set_vocabulary(input_tokenizer, targ_tokenizer)
+    model.build(loss=tf.keras.losses.SparseCategoricalCrossentropy(),
+                optimizer = tf.keras.optimizers.Adam(),
+                metric = tf.keras.metrics.SparseCategoricalAccuracy())
+
+    model.fit(dataset, val_dataset, epochs=30, use_wandb=False, teacher_forcing_ratio=teacher_forcing_ratio)
+
+    ## Character level accuracy ##
+    test_dataset, _, _ = preprocess_data(TEST_TSV, model.input_tokenizer, model.targ_tokenizer)
+    test_loss, test_acc = model.evaluate(test_dataset, batch_size=100)
+
+    ##  Word level accuracy ##
+    test_tsv = pd.read_csv(TEST_TSV, sep="\t", header=None)
+    inputs = test_tsv[1].astype(str).tolist()
+    targets = test_tsv[0].astype(str).tolist()
+
+    outputs = []
+
+    for word in inputs:
+        outputs.append(model.translate(word)[0])
+
+    def word_level_acc(outputs, targets):
+        return np.sum(np.asarray(outputs) == np.array(targets)) / len(outputs)
+
+    print(f"Word level accuracy: {word_level_acc(outputs, targets)}")
+
+    if save_outputs is not None:
+        df = pd.DataFrame()
+        df["inputs"] = inputs
+        df["targets"] = targets
+        df["outputs"] = outputs
+        df.to_csv(save_outputs)
+
+
+    return model
+
+# Visualizing Model Connectivity for question 6th
+# Tools for getting model connectivity between input and output characters
+def get_lstm_output(decoder, x, hidden, enc_out=None):
+
+    x = decoder.embedding_layer(x)
+
+    if decoder.attention:
+        context_vector, attention_weights = decoder.attention_layer(hidden, enc_out)
+        x = tf.concat([tf.expand_dims(context_vector, 1), x], -1)
+    else:
+        attention_weights = None
+
+    x = decoder.rnn_layers[0](x, initial_state=hidden)
+
+    for layer in decoder.rnn_layers[1:]:
+        x = layer(x)
+
+    output, state = x[0], x[1:]
+
+    #output = decoder.dense(decoder.flatten(output))
+
+    return output, state, attention_weights
+
+def get_output_from_embedding(encoder, x, hidden):
+
+    x = encoder.rnn_layers[0](x, initial_state=hidden)
+
+    for layer in encoder.rnn_layers[1:]:
+        x = layer(x)
+
+    output, state = x[0], x[1:]
+
+    return output, state
+
+
+def get_connectivity(model, word):
+
+    word = "\t" + word + "\n"
+
+    inputs = model.input_tokenizer.texts_to_sequences([word])
+    inputs = tf.keras.preprocessing.sequence.pad_sequences(inputs,
+                                                            maxlen=model.max_input_len,
+                                                            padding="post")
+
+    result = ""
+
+    gradient_list = []
+
+    enc_state = model.encoder.initialize_hidden_state(1)
+    embedded_in = model.encoder.embedding(inputs)
+
+
+    with tf.GradientTape(persistent=True, watch_accessed_variables=False) as tape:
+        tape.watch(embedded_in)
+
+        enc_out, enc_state = get_output_from_embedding(model.encoder, embedded_in, enc_state)
+
+        dec_state = enc_state
+        dec_input = tf.expand_dims([model.targ_tokenizer.word_index["\t"]]*1, 1)
+
+        for t in range(1, model.max_target_len):
+
+            lstm_out, dec_state, _ = get_lstm_output(model.decoder, dec_input, dec_state, enc_out)
+
+            preds = model.decoder.dense(model.decoder.flatten(lstm_out))
+            gradient_list.append(tape.gradient(lstm_out, embedded_in)[0])
+
+            preds = tf.argmax(preds, 1)
+            next_char = model.targ_tokenizer.index_word[preds.numpy().item()]
+            result += next_char
+
+            dec_input = tf.expand_dims(preds, 1)
+
+            if next_char == "\n":
+                return result[:-1], gradient_list[:-1]
+
+        return result[:-1], gradient_list[:-1]
+# Imports for visualising the model connectivity
+from sklearn.preprocessing import MinMaxScaler
+from keras.callbacks import ModelCheckpoint
+# from keras.utils import np_utils
+from tensorflow.keras.utils import to_categorical
+
+from IPython.display import HTML as html_print
+from IPython.display import display
+import tensorflow.keras.backend as K
+
+# get html element
+def cstr(s, color='black'):
+    if s == ' ':
+      return "<text style=color:#000;padding-left:10px;background-color:{}> </text>".format(color, s)
+    else:
+      return "<text style=color:#000;background-color:{}>{} </text>".format(color, s)
+
+# print html
+def print_color(t):
+	  display(html_print(''.join([cstr(ti, color=ci) for ti,ci in t])))
+
+# get appropriate color for value
+def get_clr(value):
+    colors = ['#85c2e1', '#89c4e2', '#95cae5', '#99cce6', '#a1d0e8'
+      '#b2d9ec', '#baddee', '#c2e1f0', '#eff7fb', '#f9e8e8',
+      '#f9e8e8', '#f9d4d4', '#f9bdbd', '#f8a8a8', '#f68f8f',
+      '#f47676', '#f45f5f', '#f34343', '#f33b3b', '#f42e2e']
+    value = int(value * 19)
+    if value == 19:
+        value -= 1
+    return colors[value]
+
+# sigmoid function
+def sigmoid(x):
+    z = 1/(1 + np.exp(-x))
+    return z
+
+def softmax(x):
+    v = np.exp(x)
+    v = v / np.sum(v)
+    return v
+
+def get_gradient_norms(grad_list, word, activation="sigmoid"):
+    grad_norms = []
+    for grad_tensor in grad_list:
+        grad_mags = tf.norm(grad_tensor, axis=1)
+        grad_mags = grad_mags[:len(word)]
+        if activation == "softmax":
+            grad_mags_scaled = softmax(grad_mags)
+        elif activation == "scaler":
+            scaler = MinMaxScaler()
+            grad_mags = tf.reshape(grad_mags, (-1,1))
+            grad_mags_scaled = scaler.fit_transform(grad_mags)
+        else:
+            grad_mags_scaled = sigmoid(grad_mags)
+        grad_norms.append(grad_mags_scaled)
+    return grad_norms
+
+def visualize(grad_norms, word, translated_word):
+    print("Original Word:", word)
+    print("Transliterated Word:", translated_word)
+    for i in range(len(translated_word)):
+        print("Connectivity Visualization for", translated_word[i],":")
+        text_colours = []
+        for j in range(len(grad_norms[i])):
+            text = (word[j], get_clr(grad_norms[i][j]))
+            text_colours.append(text)
+        print_color(text_colours)
+
+def visualise_connectivity(model, word, activation="sigmoid"):
+    translated_word, grad_list = get_connectivity(model, word)
+    grad_norms = get_gradient_norms(grad_list, word, activation)
+    visualize(grad_norms, word, translated_word)
+    
+model = test_on_dataset(language="hi",
+                        embedding_dim=256,
+                        encoder_layers=3,
+                        decoder_layers=3,
+                        layer_type="lstm",
+                        units=256,
+                        dropout=0.2,
+                        attention=False)
+
+visualize_model_outputs(model, n=20)
+
+def get_test_words(n):
+    test_df = pd.read_csv(get_data_files("hi")[2])
+    test_sample = test_df.sample(n)
+    test_sample.reset_index(inplace=True, drop=True)
+    test_words = []
+    for i in test_sample.index:
+        entry = test_sample["अंक\tank\t5"].loc[i]
+        parts = entry.split("\t")
+        word = parts[1]
+        test_words.append(word)
+    return test_words
+
+test_words = get_test_words(5)
+print(test_words)
+
+
+for word in test_words:
+    visualise_connectivity(model, word, activation="scaler")
+
+randomly_evaluate(model, n=5)
+
+
+# Wandb Function usage
+wandb.login()
+# train function
+def train_with_wandb(language, test_beam_search=False):
+
+    config_defaults = {"embedding_dim": 64,
+                       "enc_dec_layers": 1,
+                       "layer_type": "lstm",
+                       "units": 128,
+                       "dropout": 0,
+                       "attention": False,
+                       "beam_width": 3,
+                       "teacher_forcing_ratio": 1.0
+                       }
+
+    wandb.init(config=config_defaults, project="DA6401-Assignment_03", resume=True)
+  
+    #wandb.run.name 
+    wandb.run.name=f"edim_{wandb.config.embedding_dim}_edl_{wandb.config.enc_dec_layers}_lr_{wandb.config.layer_type}_units_{wandb.config.units}_dp_{wandb.config.dropout}_att_{wandb.config.attention}_bw_{wandb.config.beam_width}_tfc_{wandb.config.teacher_forcing_ratio}"
+
+
+    ## 1. SELECT LANGUAGE ##
+    TRAIN_TSV, VAL_TSV, TEST_TSV = get_data_files(language)
+
+    ## 2. DATA PREPROCESSING ##
+    dataset, input_tokenizer, targ_tokenizer = preprocess_data(TRAIN_TSV)
+    val_dataset, _, _ = preprocess_data(VAL_TSV, input_tokenizer, targ_tokenizer)
+
+    ## 3. CREATING THE MODEL ##
+    model = Seq2SeqModel(embedding_dim=wandb.config.embedding_dim,
+                         encoder_layers=wandb.config.enc_dec_layers,
+                         decoder_layers=wandb.config.enc_dec_layers,
+                         layer_type=wandb.config.layer_type,
+                         units=wandb.config.units,
+                         dropout=wandb.config.dropout,
+                         attention=wandb.config.attention)
+
+    ## 4. COMPILING THE MODEL
+    model.set_vocabulary(input_tokenizer, targ_tokenizer)
+    model.build(loss=tf.keras.losses.SparseCategoricalCrossentropy(),
+                optimizer = tf.keras.optimizers.Adam(),
+                metric = tf.keras.metrics.SparseCategoricalAccuracy())
+
+    ## 5. FITTING AND VALIDATING THE MODEL
+    model.fit(dataset, val_dataset, epochs=5, use_wandb=True, teacher_forcing_ratio=wandb.config.teacher_forcing_ratio)
+
+    if test_beam_search:
+        ## OPTIONAL :- Evaluate the dataset using beam search and without beam search
+        val_dataset, _, _ = preprocess_data(VAL_TSV, model.input_tokenizer, model.targ_tokenizer)
+        subset = val_dataset.take(500)
+
+        # a) Without beam search
+        _, test_acc_without = model.evaluate(subset, batch_size=100)
+        wandb.log({"test acc": test_acc_without})
+
+        # b) With beam search
+        beam_search = BeamSearch(model=model, k=wandb.config.beam_width)
+        beam_search.evaluate(subset, batch_size=100, use_wandb=True)
+
+# Sweeps without attention
+sweep_config = {
+  "name": "Sweep 1- Assignment3",
+   "method": "bayes",
+  "metric": {
+        'name': 'validation_accuracy',  
+        'goal': 'maximize'              
+    },
+ 
+  "parameters": {
+        "enc_dec_layers": {
+           "values": [1, 2, 3]
+        },
+        "units": {
+            "values": [64, 128, 256]
+        },
+        "layer_type": {
+            "values": ["rnn", "gru", "lstm"]
+        },
+        "embedding_dim": {
+            "values": [64, 128, 256]
+        },
+        "dropout": {
+            "values": [0.2, 0.3]
+         },
+        "beam_width": {
+            "values": [3, 5, 7]
+        },
+            "teacher_forcing_ratio": {
+            "values": [0.3, 0.5, 0.7, 0.9]
+        }   
     }
+}
 
-    sweep_id = wandb.sweep(sweep_config, project="sequence-to-sequence")
+#sweep_id = wandb.sweep(sweep_config, project="DA6401-Assignment_03")
+wandb.agent(sweep_id,function=lambda: train_with_wandb("hi"),project="DA6401-Assignment_03" )
 
-    def sweep_train():
-        config = wandb.config
-        model = SequenceToSequenceModel(
-            embed_dim=config.embedding_dim,
-            enc_layers=1,
-            dec_layers=1,
-            rnn_cell=config.cell_type,
-            hidden_dim=config.hidden_units,
-            dropout_rate=config.dropout
-        )
-        model.compile_model()
-        # Dummy data: Replace with actual loading
-        x_train_enc = np.random.randint(0, 5000, (100, 10))
-        x_train_dec = np.random.randint(0, 5000, (100, 10))
-        y_train = np.random.randint(0, 5000, (100, 10, 1))
-        dataset = ((x_train_enc, x_train_dec), y_train)
-        train_model(model, dataset, epochs=3)
+# Sweep function with attention mechanism
 
-    wandb.agent(sweep_id, function=sweep_train)
 
-# End of modified notebook (main parts)!
-
-# Further sections can include visualization functions, prediction examples, attention heatmaps, etc.
