@@ -69,7 +69,7 @@ def train_with_wandb(language, test_beam_search=False):
 
 
 
-#Sweep configuration of Wandb
+#Sweep configuration of Wandb without attention 
 sweep_config = {
   "name": "Sweep 1- Assignment3",
    "method": "bayes",
@@ -105,3 +105,29 @@ sweep_config = {
 
 # sweep_id = wandb.sweep(sweep_config, project="DA6401-Assignment_03")
 wandb.agent(sweep_id,function=lambda: train_with_wandb("hi"),project="DA6401-Assignment_03" )
+
+
+# SWeep with attention
+''' 
+sweep_config2 = {
+  "name": "Attention Sweep - Assignment3",
+  "description": "Hyperparameter sweep for Seq2Seq Model with Attention",
+  "method": "grid",
+  "parameters": {
+        "enc_dec_layers": {
+           "values": [1, 2, 3]
+        },
+        "units": {
+            "values": [128, 256]
+        },
+        "dropout": {
+            "values": [0, 0.2]
+        },
+        "attention": {
+            "values": [True]
+        }
+    }
+}
+sweep_id2 = wandb.sweep(sweep_config2, project="DA6401-Assignment_03")
+wandb.agent(sweep_id2,function=lambda: train_with_wandb("hi"),project="DA6401-Assignment_03" , count = 5)
+'''
