@@ -135,6 +135,27 @@ def get_layer(name, units, dropout, return_state=False, return_sequences=False):
                            return_sequences=return_sequences)
     raise ValueError(f"Unknown layer type: {name}")
 
+#  Bahdanau Attention
+class BahdanauAttention(tf.keras.layers.Layer):
+  def __init__(self, units):
+    super(BahdanauAttention, self).__init__()
+    self.W1 = tf.keras.layers.Dense(units)
+    self.W2 = tf.keras.layers.Dense(units)
+    self.V = tf.keras.layers.Dense(1)
+
+  def call(self, enc_state, enc_out):
+
+    enc_state = tf.concat(enc_state, 1)
+    enc_state = tf.expand_dims(enc_state, 1)
+
+    score = self.V(tf.nn.tanh(self.W1(enc_state) + self.W2(enc_out)))
+
+    attention_weights = tf.nn.softmax(score, axis=1)
+
+    context_vector = attention_weights * enc_out
+    context_vector = tf.reduce_sum(context_vector, axis=1)
+
+    return context_vector, attention_weights
 class Encoder(tf.keras.Model):
     def __init__(self, layer_type, n_layers, units, vocab_size, embedding_dim, dropout):
         super(Encoder, self).__init__()
