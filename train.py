@@ -27,6 +27,9 @@ def train_with_wandb(language, test_beam_search=False):
     wandb.init(config=config_defaults, project="DA6401-Assignment_03", resume=True)
     
     wandb.run.name=f"edim_{wandb.config.embedding_dim}_edl_{wandb.config.enc_dec_layers}_lr_{wandb.config.layer_type}_units_{wandb.config.units}_dp_{wandb.config.dropout}_att_{wandb.config.attention}_bw_{wandb.config.beam_width}_tfc_{wandb.config.teacher_forcing_ratio}"
+   
+    #Wand run name for hyperparameter sweep of attention mechanism
+    ## wandb.run.name = f"layers{num_layers}_units{hiddensize}_drop{dropout}_att{attention}"
 
 
     ## 1. SELECT LANGUAGE ##
@@ -131,3 +134,5 @@ sweep_config2 = {
 sweep_id2 = wandb.sweep(sweep_config2, project="DA6401-Assignment_03")
 wandb.agent(sweep_id2,function=lambda: train_with_wandb("hi"),project="DA6401-Assignment_03" , count = 5)
 '''
+# Change run name for this attention sweep 
+#wandb.run.name = f"layers{num_layers}_units{hiddensize}_drop{dropout}_att{attention}"
