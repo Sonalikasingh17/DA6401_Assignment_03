@@ -42,7 +42,7 @@ def download_data(save_path):
 
 
 # downloading and extracting the data to drive 
-# comment out the below line if running the cell again
+# uncomment the line below if downloading data for the 1st time
 # download_data("/content/drive/MyDrive/DakshinaDataset")
 
 
