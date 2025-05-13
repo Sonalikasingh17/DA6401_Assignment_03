@@ -1022,7 +1022,7 @@ def train_with_wandb(language, test_beam_search=False):
     #wandb.run.name 
     wandb.run.name=f"edim_{wandb.config.embedding_dim}_edl_{wandb.config.enc_dec_layers}_lr_{wandb.config.layer_type}_units_{wandb.config.units}_dp_{wandb.config.dropout}_att_{wandb.config.attention}_bw_{wandb.config.beam_width}_tfc_{wandb.config.teacher_forcing_ratio}"
     # Change run name for the sweep with attention
-	#"layers_{wandb.config.enc_dec_layers}_units_{wandb.config.units}_dp_{wandb.config.dropout}_att_{wandb.config.attention}"
+	#wandb.run.name=f"layers_{wandb.config.enc_dec_layers}_units_{wandb.config.units}_dp_{wandb.config.dropout}_att_{wandb.config.attention}"
 
     ## 1. SELECT LANGUAGE ##
     TRAIN_TSV, VAL_TSV, TEST_TSV = get_data_files(language)
@@ -1127,4 +1127,4 @@ wandb.agent(sweep_id2,function=lambda: train_with_wandb("hi", test_beam_search=T
 
 '''
 ## Change the run name for this attention sweep 
-"layers_{wandb.config.enc_dec_layers}_units_{wandb.config.units}_dp_{wandb.config.dropout}_att_{wandb.config.attention}"
+"wandb.run.name = f"layers_{wandb.config.enc_dec_layers}_units_{wandb.config.units}_dp_{wandb.config.dropout}_att_{wandb.config.attention}"
