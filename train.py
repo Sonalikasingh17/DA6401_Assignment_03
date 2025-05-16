@@ -115,7 +115,17 @@ wandb.agent(sweep_id,function=lambda: train_with_wandb("hi"),project="DA6401-Ass
 sweep_config2 = {
   "name": "Attention Sweep - Assignment3",
   "description": "Hyperparameter sweep for Seq2Seq Model with Attention",
-  "method": "grid",
+  "method": "bayes",
+  "metric": {
+        "name": "val acc",
+        "goal": "maximize"
+    },
+
+  "early_terminate": {
+        "type": "hyperband",
+        "min_iter": 3
+    },
+
   "parameters": {
         "enc_dec_layers": {
            "values": [1, 2, 3]
