@@ -971,11 +971,11 @@ def visualise_connectivity(model, word, activation="sigmoid"):
     
 model = test_on_dataset(language="hi",
                         embedding_dim=256,
-                        encoder_layers=3,
-                        decoder_layers=3,
+                        encoder_layers=1,
+                        decoder_layers=1,
                         layer_type="lstm",
                         units=256,
-                        dropout=0.2,
+                        dropout=0.3,
                         attention=False)
 
 visualize_model_outputs(model, n=20)
@@ -1021,7 +1021,7 @@ def train_with_wandb(language, test_beam_search=False):
   
     #wandb.run.name 
     wandb.run.name=f"edim_{wandb.config.embedding_dim}_edl_{wandb.config.enc_dec_layers}_lr_{wandb.config.layer_type}_units_{wandb.config.units}_dp_{wandb.config.dropout}_att_{wandb.config.attention}_bw_{wandb.config.beam_width}_tfc_{wandb.config.teacher_forcing_ratio}"
-    # Change run name for the sweep with attention
+    # Change run name for the sweep with attention Mechanism
 	#wandb.run.name=f"layers_{wandb.config.enc_dec_layers}_units_{wandb.config.units}_dp_{wandb.config.dropout}_att_{wandb.config.attention}"
 
     ## 1. SELECT LANGUAGE ##
@@ -1097,7 +1097,7 @@ sweep_config = {
 }
 
 #sweep_id = wandb.sweep(sweep_config, project="DA6401-Assignment_03")
-wandb.agent(sweep_id,function=lambda: train_with_wandb("hi"),project="DA6401-Assignment_03", count = 20)
+wandb.agent(sweep_id,function=lambda: train_with_wandb("hi"),project="DA6401-Assignment_03", count = 10)
 
 # Sweep function with attention mechanism
 # Run this hyperparameter sweep for attention mechanism
@@ -1105,7 +1105,17 @@ wandb.agent(sweep_id,function=lambda: train_with_wandb("hi"),project="DA6401-Ass
 sweep_config2 = {
   "name": "Attention Sweep - Assignment3",
   "description": "Hyperparameter sweep for Seq2Seq Model with Attention",
-  "method": "grid",
+  "method": "bayes",
+  "metric": {
+        "name": "val acc",
+        "goal": "maximize"
+    },
+
+  "early_terminate": {
+        "type": "hyperband",
+        "min_iter": 3
+    },
+
   "parameters": {
         "enc_dec_layers": {
            "values": [1, 2, 3]
@@ -1121,10 +1131,9 @@ sweep_config2 = {
         }
     }
 }
-
 sweep_id2 = wandb.sweep(sweep_config2, project="DA6401-Assignment_03")
 wandb.agent(sweep_id2,function=lambda: train_with_wandb("hi", test_beam_search=True),project="DA6401-Assignment_03" , count = 10)
 
 '''
 ## Change the run name for this attention sweep 
-"wandb.run.name = f"layers_{wandb.config.enc_dec_layers}_units_{wandb.config.units}_dp_{wandb.config.dropout}_att_{wandb.config.attention}"
+# "wandb.run.name = f"layers_{wandb.config.enc_dec_layers}_units_{wandb.config.units}_dp_{wandb.config.dropout}_att_{wandb.config.attention}"
