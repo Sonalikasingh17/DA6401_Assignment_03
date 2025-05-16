@@ -8,9 +8,9 @@ https://wandb.ai/sonalikasingh299-iit-madras/DA6401-Assignment_03/reports/DA6401
 
 This project implements a sequence-to-sequence (Seq2Seq) model for language translation using TensorFlow/Keras. It supports different RNN cell types (LSTM, GRU, SimpleRNN), Bahdanau attention, and optional beam search for decoding.
 
-##  Notebook Structure
-
-The notebook `Assignment_03.ipynb` is organized as follows:
+##  Structure
+I worked with only one python notebook for the whole assignment.
+I have uploaded the notebook `Assignment_03.ipynb` also which is organized as follows:
 
 1. **Imports & Configurations** – Libraries, environment setup, and configurations for GPU/TPU usage.
 2. **Data Preprocessing** – Tokenization, padding, vocabulary construction, and train-validation split.
