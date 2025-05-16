@@ -8,9 +8,40 @@ https://wandb.ai/sonalikasingh299-iit-madras/DA6401-Assignment_03/reports/DA6401
 
 This project implements a sequence-to-sequence (Seq2Seq) model for language translation using TensorFlow/Keras. It supports different RNN cell types (LSTM, GRU, SimpleRNN), Bahdanau attention, and optional beam search for decoding.
 
-##  Structure
-I worked with only one python notebook for the whole assignment.
-I have uploaded the notebook `Assignment_03.ipynb` also which is organized as follows:
+## Project Structure
+
+### `dataprocessing.py`
+
+This module handles all data preprocessing tasks:
+- Tokenization of input and target sequences
+- Padding and truncating sentences
+- Vocabulary building
+- Train-validation split
+- Sentence encoding and decoding functions
+
+### `modelclass.py`
+
+This contains all model-related class definitions:
+- `Encoder`: Encodes the input sequence using an RNN cell.
+- `Decoder`: Decodes the encoded input sequence and generates the output.
+- `BahdanauAttention`: Implements attention mechanism to dynamically focus on relevant input tokens.
+- Utility functions to build and initialize model components.
+
+### `train.py`
+
+Handles the training process:
+- Model initialization
+- Training loop using `tf.GradientTape`
+- Masked loss and accuracy
+- WandB integration for logging
+- Evaluation functions (greedy decoding and beam search)
+- BLEU score computation
+- Test inference with visualization (if attention is used)
+
+---
+
+Since, I worked with only one python Google Colab notebook for the whole assignment.
+I have uploaded the notebook `Assignment_03.ipynb`  which is organized as follows:
 
 1. **Imports & Configurations** – Libraries, environment setup, and configurations for GPU/TPU usage.
 2. **Data Preprocessing** – Tokenization, padding, vocabulary construction, and train-validation split.
@@ -130,7 +161,17 @@ Model artifacts and configurations are logged to Weights & Biases for reproducib
 
 ##  Training the Model
 
-Training is done using a custom loop with `tf.GradientTape`. You can initiate training with a simple function call:
+Training is done using a custom loop with `tf.GradientTape`. initiate training with a simple function call:
 
-```python
+```bash
 train_model(config)
+
+```
+## Testing & Evaluation
+After training, the model can be tested using beam or greedy decoding:
+``` python
+evaluate(input_sentence)            # Greedy decoding
+beam_evaluate(input_sentence, k=3)  # Beam search with width 3
+```
+Both functions return the predicted translation and BLEU score.
+If attention is enabled, evaluate also visualizes the attention heatmap over source tokens.
