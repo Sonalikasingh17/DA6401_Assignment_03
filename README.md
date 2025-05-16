@@ -43,11 +43,73 @@ You can toggle between using **attention** or **no attention** with a configurat
 
 Weights & Biases (`wandb`) is used to perform hyperparameter sweeps over:
 
-- RNN cell type (`LSTM`, `GRU`, `SimpleRNN`)
-- Embedding size
-- Units (hidden layer size)
-- Use of attention (`True/False`)
-- Beam width
+``` yaml
+# sweep without attention
+sweep_config = {
+  "name": "Sweep 1- Assignment3",
+   "method": "bayes",
+  "metric": {
+        'name': 'validation_accuracy',  
+        'goal': 'maximize'              
+    },
+ 
+  "parameters": {
+        "enc_dec_layers": {
+           "values": [1, 2, 3]
+        },
+        "units": {
+            "values": [64, 128, 256]
+        },
+        "layer_type": {
+            "values": ["rnn", "gru", "lstm"]
+        },
+        "embedding_dim": {
+            "values": [64, 128, 256]
+        },
+        "dropout": {
+            "values": [0.2, 0.3]
+         },
+        "beam_width": {
+            "values": [3, 5, 7]
+        },
+            "teacher_forcing_ratio": {
+            "values": [0.3, 0.5, 0.7, 0.9]
+        }   
+    }
+}
+
+
+# Sweep with attention mechanism 
+sweep_config2 = {
+  "name": "Attention Sweep - Assignment3",
+  "description": "Hyperparameter sweep for Seq2Seq Model with Attention",
+  "method": "bayes",
+  "metric": {
+        "name": "val acc",
+        "goal": "maximize"
+    },
+
+  "early_terminate": {
+        "type": "hyperband",
+        "min_iter": 3
+    },
+
+  "parameters": {
+        "enc_dec_layers": {
+           "values": [1, 2, 3]
+        },
+        "units": {
+            "values": [128, 256]
+        },
+        "dropout": {
+            "values": [0, 0.2]
+        },
+        "attention": {
+            "values": [True]
+        }
+    }
+}
+```
 
 Each sweep run logs metrics like training loss, validation accuracy, and BLEU score.
 
