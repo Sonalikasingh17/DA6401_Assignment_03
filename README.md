@@ -116,11 +116,16 @@ Each sweep run logs metrics like training loss, validation accuracy, and BLEU sc
 ##  Best Model
 
 The best model is selected based on validation score and test performance. The optimal configuration typically includes:
-
-- `LSTM` cell
-- Bahdanau attention
-- Beam search decoding (beam width = 3 or 5)
-
+```
+model = test_on_dataset(language="hi",
+                        embedding_dim=256,
+                        encoder_layers=1,
+                        decoder_layers=1,
+                        layer_type="lstm",
+                        units=256,
+                        dropout=0.3,
+                        attention=False)
+  ```
 Model artifacts and configurations are logged to Weights & Biases for reproducibility.
 
 ##  Training the Model
