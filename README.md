@@ -63,7 +63,7 @@ I have uploaded the notebook `Assignment_03.ipynb`  which is organized as follow
 
 The notebook uses **Bahdanau Attention**, which is implemented in a custom class. The attention mechanism computes context vectors from encoder outputs and helps the decoder focus on relevant parts of the input sequence.
 
-You can toggle between using **attention** or **no attention** with a configuration flag (`use_attention=True/False`).
+We can toggle between using **attention** or **no attention** with a configuration flag (`use_attention=True/False`).
 
 ##  Evaluation Metrics
 
@@ -108,9 +108,10 @@ sweep_config = {
         }   
     }
 }
+```
 
-
-# Sweep with attention mechanism 
+## Sweep with Attention mechanism 
+```yaml
 sweep_config2 = {
   "name": "Attention Sweep - Assignment3",
   "description": "Hyperparameter sweep for Seq2Seq Model with Attention",
