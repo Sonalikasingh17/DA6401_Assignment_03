@@ -3,7 +3,6 @@
 
 https://wandb.ai/sonalikasingh299-iit-madras/DA6401-Assignment_03/reports/DA6401-Assignment-03--VmlldzoxMjcwNzE2OA
 
-
 # Sequence-to-Sequence Translation Model with Attention
 
 This project implements a sequence-to-sequence (Seq2Seq) model for language translation using TensorFlow/Keras. It supports different RNN cell types (LSTM, GRU, SimpleRNN), Bahdanau attention, and optional beam search for decoding.
