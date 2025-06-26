@@ -9,7 +9,7 @@ This project implements a sequence-to-sequence (Seq2Seq) model for language tran
 
 ## Project Structure
 
-### `dataprocessing.py`
+### `dataprocessing.py` 
 
 This module handles all data preprocessing tasks:
 - Tokenization of input and target sequences
