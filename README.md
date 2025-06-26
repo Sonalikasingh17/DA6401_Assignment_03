@@ -1,5 +1,5 @@
 # DA6401_Assignment_03
-# Link for the Wandb Report:  
+# Link for the Wandb Report:   
 
 https://wandb.ai/sonalikasingh299-iit-madras/DA6401-Assignment_03/reports/DA6401-Assignment-03--VmlldzoxMjcwNzE2OA
 
